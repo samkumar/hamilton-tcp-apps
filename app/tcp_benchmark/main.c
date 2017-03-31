@@ -71,6 +71,8 @@ int main(void)
     printf("Running tcp_receiver program\n");
     rv = tcp_receiver(onaccept, onfinished);
 #else
+    printf("Waiting for 5 seconds...\n");
+    xtimer_usleep(5000000L);
     printf("Running tcp_sender program\n");
     rv = tcp_sender(SENDTO_ADDR, ondone);
 #endif
