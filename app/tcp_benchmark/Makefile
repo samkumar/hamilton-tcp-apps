@@ -12,6 +12,8 @@ USEMODULE += hamilton_lib_init
 # Radio
 USEMODULE += at86rf233
 
+CFLAGS += -DCOLLECT_TCP_STATS
+
 # Prefix length is assumed to be 64
 CFLAGS += -DHAMILTON_BORDER_ROUTER_ADDRESS=\"2001:470:4889:115:7b0a:fa74:734b:7679\"
 

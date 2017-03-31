@@ -1,9 +1,13 @@
 #include <inttypes.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <time.h>
 #include "../common.h"
+
+#define DEFAULT_RPI_IP "2001:470:4889::115"
+const char* rpi_ip;
 
 struct timespec start;
 void onaccept(void) {
@@ -14,9 +18,8 @@ void onaccept(void) {
     }
 }
 
+struct benchmark_stats stats;
 void onfinished(int fd) {
-    (void) fd;
-
     struct timespec end;
     int rv = clock_gettime(CLOCK_MONOTONIC_RAW, &end);
     if (rv != 0) {
@@ -31,12 +34,25 @@ void onfinished(int fd) {
         elapsed_micros += 1;
     }
 
-    struct benchmark_stats stats;
+    if (read_stats(&stats, fd) != 0) {
+        perror("read_stats");
+    }
+
     stats.time_micros = elapsed_micros;
-    print_stats(&stats);
+
+    print_stats(&stats, false);
+
+    struct benchmark_stats brstats;
+    if (read_br_stats(&brstats, rpi_ip) == 0) {
+        print_stats(&brstats, true);
+    }
 }
 
 int main(int argc, char** argv) {
+    rpi_ip = getenv("RPI_IP");
+    if (rpi_ip == NULL) {
+        rpi_ip = DEFAULT_RPI_IP;
+    }
     int rv = tcp_receiver(onaccept, onfinished);
     if (rv != 0) {
         printf("Program did not properly terminate: %d\n", rv);

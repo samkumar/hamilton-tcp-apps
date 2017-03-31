@@ -8,6 +8,8 @@
 
 #include "common.h"
 
+extern struct benchmark_stats stats;
+
 int tcp_receiver(void (*onaccept)(void), void (*onfinished)(int)) {
     static char recvbuffer[READ_SIZE];
 
@@ -36,6 +38,7 @@ int tcp_receiver(void (*onaccept)(void), void (*onfinished)(int)) {
 
     for (;;) {
         size_t total_received = 0;
+        memset(&stats, 0x00, sizeof(stats));
         int fd = accept(sock, NULL, 0);
         if (fd == -1) {
             perror("accept");
@@ -146,11 +149,83 @@ int tcp_sender(const char* receiver_ip, void (*ondone)(int)) {
     return 0;
 }
 
-void print_stats(struct benchmark_stats* stats) {
-    printf("Microseconds: %" PRIu64 "\n", stats->time_micros);
+int read_stats(struct benchmark_stats* stats, int fd) {
+    uint8_t* statsbuf = (uint8_t*) stats;
+    int rcvd = 0;
+    while (rcvd < sizeof(stats)) {
+        int r = recv(fd, statsbuf + rcvd, sizeof(*stats) - rcvd, 0);
+        if (r < 0) {
+            perror("read stats");
+            return 1;
+        } else if (r == 0) {
+            printf("read() of stats reached EOF\n");
+            return 1;
+        } else {
+            rcvd += r;
+        }
+    }
+    return 0;
+}
 
-    double sectime = ((double) stats->time_micros) / 1000000.0;
-    double bytespersec = ((double) TOTAL_BYTES) / sectime;
-    double kbitspersec = (8.0 * bytespersec) / 1000.0;
-    printf("Bandwidth: %f kb/s\n", kbitspersec);
+int read_br_stats(struct benchmark_stats* brstats, const char* rpi_ip) {
+    int sock = socket(AF_INET6, SOCK_STREAM, 0);
+    if (sock == -1) {
+        perror("socket");
+        return -1;
+    }
+
+    struct sockaddr_in6 rpi;
+    rpi.sin6_family = AF_INET6;
+    rpi.sin6_port = htons(RPI_PORT);
+
+    int rv = inet_pton(AF_INET6, rpi_ip, &rpi.sin6_addr);
+    if (rv == -1) {
+        perror("invalid address family in inet_pton");
+        return -1;
+    } else if (rv == 0) {
+        perror("invalid ip address in inet_pton");
+        return -1;
+    }
+
+    rv = connect(sock, (struct sockaddr*) &rpi, sizeof(struct sockaddr_in6));
+    if (rv == -1) {
+        perror("connect");
+        return -1;
+    }
+
+    rv = read_stats(brstats, sock);
+    close(sock);
+
+    return rv;
+}
+
+void print_stats(struct benchmark_stats* stats, bool border_router) {
+    if (border_router) {
+        printf("Border router sent %" PRIu32 " packets uplink, sent %" PRIu32 " downlink\n", stats->hamilton_tcp_segs_sent, stats->hamilton_tcp_segs_received);
+    } else {
+        printf("Microseconds: %" PRIu64 "\n", stats->time_micros);
+
+        double sectime = ((double) stats->time_micros) / 1000000.0;
+        double bytespersec = ((double) TOTAL_BYTES) / sectime;
+        double kbitspersec = (8.0 * bytespersec) / 1000.0;
+        printf("Bandwidth: %f kb/s\n", kbitspersec);
+
+        printf("Hamilton sent %" PRIu32 " TCP segments, received %" PRIu32 "\n", stats->hamilton_tcp_segs_sent, stats->hamilton_tcp_segs_received);
+        double srtt = ((double) stats->hamilton_tcp_srtt) / 32.0;
+        double rttdev = ((double) stats->hamilton_tcp_rttdev) / 16.0;
+        printf("Hamilton TCP RTT stats: srtt = %f ms, rttdev = %f ms, rttlow = %" PRIu32 " ms\n", srtt, rttdev, stats->hamilton_tcp_rttlow);
+        printf("hamilton TCP CC stats: cwnd = %" PRIu32 ", ssthresh = %" PRIu32 ", dupacks = %" PRIu32 "\n", stats->hamilton_tcp_cwnd, stats->hamilton_tcp_ssthresh, stats->hamilton_tcp_total_dupacks);
+    }
+
+    printf("Hamilton received %" PRIu32 " slp frags, and reassembled them into %" PRIu32 " packets (%" PRIu32 " single frags)\n", stats->hamilton_slp_frags_received, stats->hamilton_slp_packets_reassembled, stats->hamilton_slp_rcv_packets_singlefrag);
+    printf("Hamilton sent %" PRIu32 " packets, fragmenting them into %" PRIu32 " slp frags (%" PRIu32 " single frags)\n", stats->hamilton_slp_packets_sent, stats->hamilton_slp_frags_sent, stats->hamilton_slp_snd_packets_singlefrag);
+
+    printf("Hamilton received %" PRIu32 " link-layer frames\n", stats->hamilton_ll_frames_received);
+    printf("Hamilton link-layer tries needed:");
+    for (int i = 0; i != 12; i++) {
+        printf(" %" PRIu32, stats->hamilton_ll_retries_required[i]);
+    }
+    printf("\n");
+    printf("Hamilton link-layer send failures: %" PRIu32 "\n", stats->hamilton_ll_frames_send_fail);
+
 }

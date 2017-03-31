@@ -23,7 +23,27 @@
 
 #define SENDTO_ADDR "2001:470:4889::114"
 
-#define I_AM_RECEIVER
+//#define I_AM_RECEIVER
+
+#include "../../RIOT-OS/sys/net/gnrc/transport_layer/tcp_freebsd/bsdtcp/tcp_var.h"
+extern struct tcpcb tcbs[1];
+struct benchmark_stats stats;
+
+void ondone(int fd) {
+    stats.hamilton_tcp_srtt = (uint32_t) tcbs[0].t_srtt;
+    stats.hamilton_tcp_rttdev = (uint32_t) tcbs[0].t_rttvar;
+    stats.hamilton_tcp_rttlow = (uint32_t) tcbs[0].t_rttlow;
+    stats.hamilton_tcp_cwnd = (uint32_t) tcbs[0].snd_cwnd;
+    stats.hamilton_tcp_ssthresh = (uint32_t) tcbs[0].snd_ssthresh;
+    stats.hamilton_tcp_total_dupacks = (uint32_t) tcbs[0].t_total_dupacks;
+    /* Rest of the variables are filled in already ... */
+
+    int rv = send(fd, &stats, sizeof(stats), 0);
+    if (rv != sizeof(stats)) {
+        perror("Could not send stats");
+        return;
+    }
+}
 
 #ifdef I_AM_RECEIVER
 xtimer_ticks64_t start = {0};
@@ -35,15 +55,9 @@ void onfinished(int fd) {
     /* Now, compute and print out stats. */
     xtimer_ticks64_t total_time = xtimer_diff64(end, start);
     uint64_t total_micros = xtimer_usec_from_ticks64(total_time);
-
-    struct benchmark_stats stats;
     stats.time_micros = total_micros;
 
-    int rv = send(fd, &stats, sizeof(stats), 0);
-    if (rv != sizeof(stats)) {
-        perror("Could not send stats");
-        return;
-    }
+    ondone(fd);
 }
 #endif
 
@@ -58,7 +72,7 @@ int main(void)
     rv = tcp_receiver(onaccept, onfinished);
 #else
     printf("Running tcp_sender program\n");
-    rv = tcp_sender(SENDTO_ADDR, NULL);
+    rv = tcp_sender(SENDTO_ADDR, ondone);
 #endif
 
     if (rv == 0) {
