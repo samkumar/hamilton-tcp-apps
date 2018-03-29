@@ -1,6 +1,7 @@
 #include <error.h>
 #include <inttypes.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,7 +70,7 @@ void* handle_connection(void* arg) {
 
     time_t seconds = end_time.tv_sec - start_time.tv_sec;
     long nanoseconds = end_time.tv_nsec - start_time.tv_nsec;
-    info->elapsed_nanoseconds = (1000000000UL * seconds) + nanoseconds;
+    info->elapsed_nanoseconds = (UINT64_C(1000000000) * (uint64_t) seconds) + (uint64_t) nanoseconds;
 
     printf("Connection %d from %s ended\n", info->index, info->addr_str);
 
